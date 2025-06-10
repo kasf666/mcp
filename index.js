@@ -2,7 +2,7 @@
 require('dotenv').config();
 const express = require('express');
 const { handleMessage } = require('./mcp/handler');
-const SlackTool = require('./slack'); // Подключаем Slack tool
+const SlackTool = require('./adapters/slack'); // Подключаем Slack tool
 
 const app = express();
 
