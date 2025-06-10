@@ -15,6 +15,5 @@ yarn-error.log*
 .vscode/
 
 # Fly.io / Docker (если используешь)
-fly.toml
 *.sqlite
 *.sqlite3
