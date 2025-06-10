@@ -55,38 +55,39 @@ class SlackTool {
   async handleSlackEvent(req, res) {
     const body = req.body;
     const { type, challenge, event } = body;
-
-    // ✅ Верификация URL при настройке Slack Events
+  
+    // URL verification
     if (type === 'url_verification' && challenge) {
-      console.log('Slack URL verification challenge received');
+      console.log('Slack challenge received:', challenge);
       return res.status(200).json({ challenge });
     }
-
-    // ✅ Подпись Slack (включи при готовности)
-    // if (!this.verifySlackSignature(req)) {
-    //   console.warn('Invalid Slack signature');
-    //   return res.status(401).json({ error: 'Invalid signature' });
-    // }
-
-    // ✅ События Slack
-    if (type === 'event_callback' && event) {
-      console.log('Slack event received:', event.type);
-
-      try {
-        if (event.type === 'app_mention') {
-          await this.handleMention(event);
-        }
-
-        if (event.type === 'message' && event.channel_type === 'im' && !event.bot_id) {
-          await this.handleDirectMessage(event);
-        }
-
-      } catch (error) {
-        console.error('Error processing Slack event:', error);
+  
+    // Только сообщения пользователей
+    if (type === 'event_callback' && event?.type === 'message') {
+      // Игнорируем ботов (включая самого себя)
+      if (event.subtype === 'bot_message' || event.bot_id) {
+        return res.status(200).json({ ok: true });
       }
+  
+      const { channel, user, text } = event;
+  
+      console.log(`📥 Message from ${user} in channel ${channel}: "${text}"`);
+  
+      if (text && user && channel) {
+        try {
+          const reply = await handleMessage({ user, message: text, channel });
+          await this.sendMessage(channel, reply);
+        } catch (error) {
+          console.error('❌ Error in handleMessage:', error);
+          await this.sendMessage(channel, 'Извините, произошла ошибка при обработке вашего сообщения.');
+        }
+      }
+  
+      return res.status(200).json({ ok: true });
     }
-
-    return res.status(200).json({ ok: true });
+  
+    // Все остальные случаи
+    return res.status(200).json({ ignored: true });
   }
 
   async handleMention(event) {
