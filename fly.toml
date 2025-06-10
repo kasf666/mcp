@@ -7,6 +7,7 @@ app = 'mcp-l7txpa'
 primary_region = 'waw'
 
 [build]
+builder = "heroku/builder:pack"
 
 [http_service]
   internal_port = 3000
