@@ -14,43 +14,41 @@ class SlackTool {
 
   async handleSlackEvent(req, res) {
     const { type, challenge, event } = req.body;
-
-    // Slack challenge (при первичной настройке URL)
+  
+    // ✅ Slack challenge
     if (type === 'url_verification' && challenge) {
       return res.status(200).json({ challenge });
     }
-
-    // Основной обработчик только текстовых сообщений
+  
+    // ✅ Только обработка текстовых сообщений
     if (type === 'event_callback' && event?.type === 'message') {
-      const { subtype, bot_id, user, channel, text } = event;
-
-      // Игнорируем ботов, в том числе себя
+      
+      // 🧱 Фильтр: игнорировать бот-сообщения, в том числе свои
       if (
-        subtype === 'bot_message' ||
-        bot_id ||
-        (this.botUserId && user === this.botUserId)
+        event.subtype === 'bot_message' ||
+        event.bot_id ||
+        (process.env.SLACK_BOT_USER_ID && event.user === process.env.SLACK_BOT_USER_ID) ||
+        !event.client_msg_id // ← ключевой фильтр
       ) {
-        return res.status(200).json({ ok: true });
-      }
-
-      console.log(`📩 Message from ${user}: "${text}"`);
-
-      if (event.user === process.env.SLACK_BOT_USER_ID) {
-        console.log('⚠️ Ignored message from self');
+        console.log('⛔ Ignored: likely bot or system message');
         return res.status(200).json({ ignored: true });
       }
-
+  
+      const { user, channel, text } = event;
+      console.log(`📩 Message from ${user}: "${text}"`);
+  
       try {
         const reply = await handleMessage({ user, message: text, channel });
         await this.sendMessage(channel, reply);
       } catch (err) {
-        console.error('❌ MCP error:', err);
+        console.error('❌ Error in handleMessage:', err);
         await this.sendMessage(channel, 'Извините, произошла ошибка при обработке запроса.');
       }
-
+  
       return res.status(200).json({ ok: true });
     }
-
+  
+    // ✅ Остальное игнорируем
     return res.status(200).json({ ignored: true });
   }
 
