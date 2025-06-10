@@ -1,135 +1,103 @@
-// slack.js
 const crypto = require('crypto');
-const { handleMessage } = require('../mcp/handler'); // Подключаем ваш MCP handler
+const { handleMessage } = require('../mcp/handler');
 
 class SlackTool {
   constructor() {
     this.name = 'slack';
     this.description = 'Send messages to Slack channels and users';
-    
-    // Получаем из environment variables
-    this.botToken = process.env.SLACK_BOT_TOKEN; // xoxb-...
+
+    this.botToken = process.env.SLACK_BOT_TOKEN;
     this.signingSecret = process.env.SLACK_SIGNING_SECRET;
-    
+
     if (!this.botToken || !this.signingSecret) {
       console.warn('Slack credentials not found in environment variables');
     }
   }
 
-  // Метод для верификации Slack challenge (нужен для Event Subscriptions)
-  handleSlackChallenge(req, res) {
-    const { challenge, token, type } = req.body;
-    
-    if (type === 'url_verification') {
-      console.log('Slack challenge received:', challenge);
-      return res.json({ challenge });
-    }
-    
-    return res.status(400).json({ error: 'Invalid request' });
-  }
-
-  // Верификация подписи Slack (для безопасности)
   verifySlackSignature(req) {
     if (!this.signingSecret) {
       console.warn('Slack signing secret not configured, skipping verification');
-      return true; // Skip verification if no secret
+      return true;
     }
-    
+
     const signature = req.headers['x-slack-signature'];
     const timestamp = req.headers['x-slack-request-timestamp'];
-    const body = req.body.toString();
-    
-    if (!signature || !timestamp) {
-      console.warn('Missing Slack signature or timestamp');
+    const rawBody = req.rawBody; // см. примечание ниже
+
+    if (!signature || !timestamp || !rawBody) {
+      console.warn('Missing Slack signature, timestamp, or body');
       return false;
     }
-    
-    // Проверяем, что запрос не старше 5 минут
-    const time = Math.floor(new Date().getTime() / 1000);
-    if (Math.abs(time - timestamp) > 300) {
+
+    const fiveMinutesAgo = Math.floor(Date.now() / 1000) - 60 * 5;
+    if (parseInt(timestamp) < fiveMinutesAgo) {
       console.warn('Slack request too old');
       return false;
     }
-    
-    // Создаем подпись
-    const sigBasestring = 'v0:' + timestamp + ':' + body;
+
+    const sigBaseString = `v0:${timestamp}:${rawBody}`;
     const mySignature = 'v0=' + crypto
       .createHmac('sha256', this.signingSecret)
-      .update(sigBasestring, 'utf8')
+      .update(sigBaseString, 'utf8')
       .digest('hex');
-    
+
     try {
       return crypto.timingSafeEqual(
         Buffer.from(mySignature, 'utf8'),
         Buffer.from(signature, 'utf8')
       );
-    } catch (error) {
-      console.warn('Error verifying Slack signature:', error);
+    } catch (err) {
+      console.warn('Signature comparison failed:', err);
       return false;
     }
   }
 
-  // Обработка событий Slack (упоминания бота, сообщения)
   async handleSlackEvent(req, res) {
-    const rawBody = req.body.toString();
-    const body = JSON.parse(rawBody);
-    
-    const { type, event } = body;
+    const body = req.body;
+    const { type, challenge, event } = body;
 
-    // Handle URL verification challenge
-    if (type === 'url_verification') {
+    // ✅ Верификация URL при настройке Slack Events
+    if (type === 'url_verification' && challenge) {
       console.log('Slack URL verification challenge received');
-      return res.json({ challenge: body.challenge });
+      return res.status(200).json({ challenge });
     }
 
-    // Verify signature for actual events
-    if (type === 'event_callback') {
-      // Временно отключаем проверку подписи для отладки
-      // if (!this.verifySlackSignature(req)) {
-      //   console.warn('Invalid Slack signature');
-      //   return res.status(401).json({ error: 'Invalid signature' });
-      // }
-    }
+    // ✅ Подпись Slack (включи при готовности)
+    // if (!this.verifySlackSignature(req)) {
+    //   console.warn('Invalid Slack signature');
+    //   return res.status(401).json({ error: 'Invalid signature' });
+    // }
 
+    // ✅ События Slack
     if (type === 'event_callback' && event) {
-      console.log('Slack event received:', event.type, event);
-      
+      console.log('Slack event received:', event.type);
+
       try {
-        // Обрабатываем упоминания бота
         if (event.type === 'app_mention') {
           await this.handleMention(event);
         }
-        
-        // Обрабатываем DM сообщения
+
         if (event.type === 'message' && event.channel_type === 'im' && !event.bot_id) {
           await this.handleDirectMessage(event);
         }
+
       } catch (error) {
         console.error('Error processing Slack event:', error);
       }
     }
 
-    res.json({ ok: true });
+    return res.status(200).json({ ok: true });
   }
 
-  // Обработка упоминаний бота
   async handleMention(event) {
     const { channel, user, text } = event;
-    
-    // Убираем упоминание бота из текста
     const cleanText = text.replace(/<@[UW][A-Z0-9]+>/g, '').trim();
-    
+
     console.log(`Bot mentioned in channel ${channel} by user ${user}: "${cleanText}"`);
-    
+
     if (cleanText) {
       try {
-        // Используем ваш MCP handler для обработки сообщения
-        const reply = await handleMessage({ 
-          user: user, 
-          message: cleanText, 
-          channel: channel 
-        });
-        
+        const reply = await handleMessage({ user, message: cleanText, channel });
         await this.sendMessage(channel, reply);
       } catch (error) {
         console.error('Error handling mention:', error);
@@ -138,21 +106,14 @@ class SlackTool {
     }
   }
 
-  // Обработка личных сообщений
   async handleDirectMessage(event) {
     const { channel, user, text } = event;
-    
+
     console.log(`DM received from user ${user}: "${text}"`);
-    
+
     if (text) {
       try {
-        // Используем ваш MCP handler для обработки сообщения
-        const reply = await handleMessage({ 
-          user: user, 
-          message: text, 
-          channel: channel 
-        });
-        
+        const reply = await handleMessage({ user, message: text, channel });
         await this.sendMessage(channel, reply);
       } catch (error) {
         console.error('Error handling DM:', error);
@@ -161,17 +122,12 @@ class SlackTool {
     }
   }
 
-  // Основной метод для отправки сообщений
   async sendMessage(channel, text, options = {}) {
     if (!this.botToken) {
       throw new Error('Slack bot token not configured');
     }
 
-    const payload = {
-      channel,
-      text,
-      ...options
-    };
+    const payload = { channel, text, ...options };
 
     try {
       const response = await fetch('https://slack.com/api/chat.postMessage', {
@@ -184,7 +140,7 @@ class SlackTool {
       });
 
       const result = await response.json();
-      
+
       if (!result.ok) {
         throw new Error(`Slack API error: ${result.error}`);
       }
@@ -197,7 +153,6 @@ class SlackTool {
     }
   }
 
-  // Получение списка каналов
   async getChannels() {
     if (!this.botToken) {
       throw new Error('Slack bot token not configured');
@@ -213,7 +168,7 @@ class SlackTool {
       });
 
       const result = await response.json();
-      
+
       if (!result.ok) {
         throw new Error(`Slack API error: ${result.error}`);
       }

@@ -1,22 +1,17 @@
-// index.js
 require('dotenv').config();
 const express = require('express');
 const { handleMessage } = require('./mcp/handler');
-const SlackTool = require('./adapters/slack'); // Подключаем Slack tool
+const SlackTool = require('./adapters/slack');
 
 const app = express();
 
-// Middleware для обычных JSON запросов
 app.use('/mcp', express.json());
-app.use('/slack/events', express.raw({ type: 'application/json' }));
+app.use('/slack/events', express.json());
 
-// Инициализируем Slack tool
 const slackTool = new SlackTool();
 
-// Существующий MCP endpoint
 app.post('/mcp', async (req, res) => {
   const { user, message, channel } = req.body;
-  
   try {
     const reply = await handleMessage({ user, message, channel });
     res.json({ reply });
@@ -26,22 +21,11 @@ app.post('/mcp', async (req, res) => {
   }
 });
 
-// Новые Slack endpoints
+// ✅ исправленный Slack endpoint
 app.post('/slack/events', (req, res) => {
-  try {
-    // Парсим JSON из raw body
-    const body = JSON.parse(req.body.toString());
-    req.body = body;
-    
-    // Обрабатываем Slack события
-    slackTool.handleSlackEvent(req, res);
-  } catch (error) {
-    console.error('Error handling Slack event:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
+  slackTool.handleSlackEvent(req, res);
 });
 
-// Endpoint для тестирования Slack интеграции
 app.get('/slack/test', async (req, res) => {
   try {
     const channels = await slackTool.getChannels();
@@ -49,7 +33,7 @@ app.get('/slack/test', async (req, res) => {
       status: 'OK', 
       message: 'Slack integration working',
       channels_count: channels.length,
-      channels: channels.slice(0, 5).map(ch => ({ id: ch.id, name: ch.name })) // Показываем первые 5
+      channels: channels.slice(0, 5).map(ch => ({ id: ch.id, name: ch.name }))
     });
   } catch (error) {
     res.status(500).json({ 
@@ -59,14 +43,11 @@ app.get('/slack/test', async (req, res) => {
   }
 });
 
-// Endpoint для отправки сообщения в Slack (для тестирования)
 app.post('/slack/send', express.json(), async (req, res) => {
   const { channel, text } = req.body;
-  
   if (!channel || !text) {
     return res.status(400).json({ error: 'channel and text are required' });
   }
-  
   try {
     const result = await slackTool.sendMessage(channel, text);
     res.json({ success: true, result });
@@ -76,7 +57,6 @@ app.post('/slack/send', express.json(), async (req, res) => {
   }
 });
 
-// Главная страница
 app.get('/', (req, res) => {
   res.send(`
     <h1>MCP Server is running</h1>
