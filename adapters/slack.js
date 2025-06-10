@@ -1,6 +1,6 @@
 // slack.js
 const crypto = require('crypto');
-const { handleMessage } = require('./mcp/handler'); // Подключаем ваш MCP handler
+const { handleMessage } = require('../mcp/handler'); // Подключаем ваш MCP handler
 
 class SlackTool {
   constructor() {
