@@ -5,15 +5,17 @@ const { routerPrompt } = require('../prompts/routerPrompt');
 
 async function handleMessage({ user, message, channel }) {
   try {
+    // Шаг 1 — пробуем классифицировать
     const reasoning = await askLLM({
       systemPrompt: routerPrompt,
       userMessage: message,
     });
 
-    console.log('GPT returned:', reasoning);
+    console.log('🧠 LLM classified as:', reasoning);
 
     const parsed = JSON.parse(reasoning);
 
+    // Шаг 2 — если получилось, выполняем команду
     switch (parsed.action) {
       case 'get-leads':
         return await handleGetLeads(parsed.filters);
@@ -21,12 +23,25 @@ async function handleMessage({ user, message, channel }) {
         return await handleSummarize(parsed.text);
       case 'scrape':
         return await handleScrape(parsed);
+      case 'chitchat':
+        return await askLLM({
+          systemPrompt: 'You are a helpful assistant. Answer user questions clearly.',
+          userMessage: message
+        });
       default:
-        return 'Unknown action.';
+        return `❓ Unknown action: ${parsed.action}`;
     }
+
   } catch (error) {
-    console.error('Error handling message:', error);
-    return "Sorry, I couldn't understand what to do.";
+    // Шаг 3 — если GPT не вернул валидный JSON (или ошибка), просто отвечаем на вопрос
+    console.warn('🗨 GPT fallback: answering as assistant:', error.message);
+
+    const reply = await askLLM({
+      systemPrompt: 'You are a helpful assistant. Answer user questions clearly.',
+      userMessage: message
+    });
+
+    return reply;
   }
 }
 
