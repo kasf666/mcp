@@ -1,12 +1,7 @@
 # Node.js
 node_modules/
 .env
-dist/
-build/
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+
 
 # macOS
 .DS_Store
@@ -14,6 +9,3 @@ yarn-error.log*
 # VSCode
 .vscode/
 
-# Fly.io / Docker (если используешь)
-*.sqlite
-*.sqlite3
